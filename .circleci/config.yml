@@ -42,40 +42,40 @@ jobs:
             - deployment_id.txt
             - stack_name.txt
   
-    promote_to_production: #job name
-      docker: # it uses the docker executor
-        - image: amazon/aws-cli
-      steps:
-        - checkout
-        - run:
-            name: promote to production
-            #echo environment variable
-            command: |
-              aws cloudformation deploy \
-              --template-file cloudfront.yml \
-              --stack-name production-distro \
-              --parameter-overrides PipelineID="${CIRCLE_WORKFLOW_ID}"
+  promote_to_production: #job name
+    docker: # it uses the docker executor
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: promote to production
+          #echo environment variable
+          command: |
+            aws cloudformation deploy \
+            --template-file cloudfront.yml \
+            --stack-name production-distro \
+            --parameter-overrides PipelineID="${CIRCLE_WORKFLOW_ID}"
 
-    clean_up_old_front_end: #job name
-      docker: # it uses the docker executor
-        - image: amazon/aws-cli
-      steps:
-        - checkout
-        - run: yum install -y tar
-        - run: yum install -y gzip
-        - attach_workspace:
-            at: ~/
-        - run:
-            name: clean up
-            command: |
-              cat ~/deployment_id.txt
-              cat ~/stack_name.txt
-              OldPipelineID=$(cat ~/deployment_id.txt)
-              echo $OldPipelineID
-              PreviousStackName=$(cat ~/stack_name.txt)
-              echo $PreviousStackName
-              aws s3 rm s3://${OldPipelineID} --recursive
-              aws cloudformation delete-stack --stack-name $PreviousStackName
+  clean_up_old_front_end: #job name
+    docker: # it uses the docker executor
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar
+      - run: yum install -y gzip
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: clean up
+          command: |
+            cat ~/deployment_id.txt
+            cat ~/stack_name.txt
+            OldPipelineID=$(cat ~/deployment_id.txt)
+            echo $OldPipelineID
+            PreviousStackName=$(cat ~/stack_name.txt)
+            echo $PreviousStackName
+            aws s3 rm s3://${OldPipelineID} --recursive
+            aws cloudformation delete-stack --stack-name $PreviousStackName
 
         
 workflows:
