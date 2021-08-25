@@ -1,0 +1,94 @@
+version: 2.1
+
+jobs:
+  create_and_deploy_front_end:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: |
+          aws cloudformation deploy \
+            --template-file bucket.yml \
+            --stack-name "${CIRCLE_WORKFLOW_ID}" \
+            --parameter-overrides NAME="${CIRCLE_WORKFLOW_ID}"
+      - run: aws s3 sync . s3://"${CIRCLE_WORKFLOW_ID}" --delete
+
+  get_last_deployment_id: #job name
+    docker: # it uses the docker executor
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar
+      - run: yum install -y gzip
+      - run:
+          name: get last deployment id
+          #echo environment variable
+          command: |
+            aws cloudformation \
+            list-exports --query "Exports[?Name==\`PipelineID\`].Value" \
+            --no-paginate --output text > ~/deployment_id.txt
+      - run: cat ~/deployment_id.txt
+      - run:
+          name: get last deployment stack name
+          #echo environment variable
+          command: |
+            aws cloudformation \
+            list-exports --query "Exports[?Name==\`StackName\`].Value" \
+            --no-paginate --output text > ~/stack_name.txt
+      - run: cat ~/stack_name.txt
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - deployment_id.txt
+            - stack_name.txt
+  
+    promote_to_production: #job name
+      docker: # it uses the docker executor
+        - image: amazon/aws-cli
+      steps:
+        - checkout
+        - run:
+            name: promote to production
+            #echo environment variable
+            command: |
+              aws cloudformation deploy \
+              --template-file cloudfront.yml \
+              --stack-name production-distro \
+              --parameter-overrides PipelineID="${CIRCLE_WORKFLOW_ID}"
+
+    clean_up_old_front_end: #job name
+      docker: # it uses the docker executor
+        - image: amazon/aws-cli
+      steps:
+        - checkout
+        - run: yum install -y tar
+        - run: yum install -y gzip
+        - attach_workspace:
+            at: ~/
+        - run:
+            name: clean up
+            command: |
+              cat ~/deployment_id.txt
+              cat ~/stack_name.txt
+              OldPipelineID=$(cat ~/deployment_id.txt)
+              echo $OldPipelineID
+              PreviousStackName=$(cat ~/stack_name.txt)
+              echo $PreviousStackName
+              aws s3 rm s3://${OldPipelineID} --recursive
+              aws cloudformation delete-stack --stack-name $PreviousStackName
+
+        
+workflows:
+  # workflow
+  my_workflow:
+    jobs:
+      - create_and_deploy_front_end
+      - get_last_deployment_id:
+          requires:
+            - create_and_deploy_front_end
+      - promote_to_production:
+          requires:
+            - get_last_deployment_id
+      - clean_up_old_front_end:
+          requires:
+            - promote_to_production
